@@ -1,9 +1,10 @@
 import React from 'react';
-import { FileDown, Loader2, Menu, Printer, Save } from 'lucide-react';
+import { ArrowLeft, FileDown, Loader2, Menu, Printer, Save } from 'lucide-react';
 import { QuickWinsEmblem } from './PolriEmblems';
 
 interface DashboardHeaderProps {
   onToggleSidebar: () => void;
+  onBackToDashboard?: () => void;
   onSaveToArchive: () => void;
   onExportWord: () => void;
   onExportPdf: () => void;
@@ -14,6 +15,7 @@ interface DashboardHeaderProps {
 
 export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   onToggleSidebar,
+  onBackToDashboard,
   onSaveToArchive,
   onExportWord,
   onExportPdf,
@@ -25,8 +27,22 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   return (
     <header className="no-print relative z-20 bg-[#1B150F] border-b border-[#3A3024]">
       <div className="px-4 lg:px-6 py-3 flex flex-wrap items-center justify-between gap-4">
-        {/* Left: Menu Button + Emblem + Title */}
-        <div className="flex items-center gap-3.5 min-w-0">
+        {/* Left: Back to Dashboard + Menu Button + Emblem + Title */}
+        <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+          {onBackToDashboard && (
+            <button
+              type="button"
+              onClick={onBackToDashboard}
+              title="Kembali ke Dashboard Utama"
+              aria-label="Kembali ke Dashboard Utama"
+              className="inline-flex items-center gap-1.5 px-3 h-10 rounded-lg border border-[#4A3D2C] bg-[#241C14] text-[#F4C94D] hover:bg-[#2F251A] hover:border-[#D4A017] text-xs font-semibold transition-colors shrink-0 cursor-pointer whitespace-nowrap"
+            >
+              <ArrowLeft className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Dashboard Utama</span>
+              <span className="sm:hidden">Dashboard</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onToggleSidebar}

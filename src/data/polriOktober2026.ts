@@ -155,12 +155,12 @@ export const INITIAL_PERSONNEL: Personnel[] = [
     phaseOnOct31: 4,
   },
   {
-    id: 'pawas_3',
+    id: 'pawas_7',
     unit: 'PAWAS',
     unitNo: 3,
-    name: 'HARSONO',
+    name: 'M. ALI MAGHFUR, S.H.',
     pangkat: 'IPTU',
-    nrp: '74020279',
+    nrp: '74080418',
     jabatan: 'PS. KANIT SAMAPTA',
     ket: '',
     cycleType: 'INTERVAL_X',
@@ -181,25 +181,9 @@ export const INITIAL_PERSONNEL: Personnel[] = [
     phaseOnOct31: 0,
   },
   {
-    id: 'pawas_5',
-    unit: 'PAWAS',
-    unitNo: 5,
-    name: 'AGUS NUR YANTO, S.H.',
-    pangkat: 'IPTU',
-    nrp: '73090344',
-    jabatan: 'PS. KANIT LANTAS',
-    ket: 'SEMENTARA TIDAK PIKET',
-    cycleType: 'INTERVAL_X',
-    cycleLength: 6,
-    phaseOnOct31: 1,
-    highlightColor: 'red',
-    dutyPaused: true,
-    pausedFromDate: '2026-11-14',
-  },
-  {
     id: 'pawas_6',
     unit: 'PAWAS',
-    unitNo: 6,
+    unitNo: 5,
     name: 'Dr. TRI SUTRISNO, S.H., M.H.',
     pangkat: 'IPTU',
     nrp: '72050205',
@@ -303,7 +287,7 @@ export const INITIAL_PERSONNEL: Personnel[] = [
     phaseOnOct31: 1, // Nov 1 = L
   },
 
-  // LANTAS (3)
+  // LANTAS (2)
   {
     id: 'lantas_1',
     unit: 'LANTAS',
@@ -318,22 +302,9 @@ export const INITIAL_PERSONNEL: Personnel[] = [
     phaseOnOct31: 2, // 14 Nov = M
   },
   {
-    id: 'lantas_2',
-    unit: 'LANTAS',
-    unitNo: 2,
-    name: 'ARIP KURNIAWAN',
-    pangkat: 'AIPDA',
-    nrp: '83020743',
-    jabatan: 'BANIT LANTAS',
-    ket: '',
-    cycleType: 'CYCLE_SML',
-    cycleLength: 3,
-    phaseOnOct31: 1, // 14 Nov = S
-  },
-  {
     id: 'lantas_3',
     unit: 'LANTAS',
-    unitNo: 3,
+    unitNo: 2,
     name: 'ERI SETIAWAN, S.H.',
     pangkat: 'AIPDA',
     nrp: '85081180',
@@ -341,7 +312,33 @@ export const INITIAL_PERSONNEL: Personnel[] = [
     ket: '',
     cycleType: 'CYCLE_SML',
     cycleLength: 3,
-    phaseOnOct31: 0, // 14 Nov = L
+    phaseOnOct31: 0, // Nov 1 = M / 14 Nov = L
+  },
+  {
+    id: 'lantas_4',
+    unit: 'LANTAS',
+    unitNo: 3,
+    name: 'ARIEF MUNDRIANTO, S.H.',
+    pangkat: 'AIPTU',
+    nrp: '82050373',
+    jabatan: 'BANIT LANTAS',
+    ket: '',
+    cycleType: 'CYCLE_SML',
+    cycleLength: 3,
+    phaseOnOct31: 1,
+  },
+  {
+    id: 'lantas_5',
+    unit: 'LANTAS',
+    unitNo: 4,
+    name: 'TRIMANTO',
+    pangkat: 'AIPTU',
+    nrp: '73050517',
+    jabatan: 'BANIT LANTAS',
+    ket: '',
+    cycleType: 'CYCLE_SML',
+    cycleLength: 3,
+    phaseOnOct31: 0,
   },
 
   // BHABIN (10)

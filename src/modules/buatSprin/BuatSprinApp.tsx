@@ -93,6 +93,7 @@ export interface BuatSprinAppProps {
   overrides: ShiftOverrides;
   scheduleRevisions?: ScheduleRevision[];
   todayDateKey: string;
+  onExitToDashboard?: () => void;
 }
 
 export function BuatSprinApp({
@@ -102,6 +103,7 @@ export function BuatSprinApp({
   overrides,
   scheduleRevisions,
   todayDateKey,
+  onExitToDashboard,
 }: BuatSprinAppProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeView, setActiveView] = useState<AppView>('editor');
@@ -300,11 +302,12 @@ export function BuatSprinApp({
   };
 
   return (
-    <div className="min-h-[calc(100vh-88px)] flex flex-col bg-[#14100C] text-[#F5F0E6] rounded-xl border border-[#2f271d] overflow-hidden print:border-0 print:rounded-none print:bg-white print:text-black">
+    <div className="min-h-screen w-full flex flex-col bg-[#14100C] text-[#F5F0E6] overflow-hidden print:bg-white print:text-black">
       {/* SCREEN WORKSPACE (Hidden during print) */}
       <div className="no-print flex flex-col flex-1 min-h-0">
         <DashboardHeader
           onToggleSidebar={() => setSidebarOpen((o) => !o)}
+          onBackToDashboard={onExitToDashboard}
           onSaveToArchive={handleSaveToArchive}
           onExportWord={async () => {
             try {
@@ -351,7 +354,7 @@ export function BuatSprinApp({
             {activeView === 'editor' && (
               <div className="flex flex-col xl:flex-row h-full">
                 {/* Left Column: Tactical Form Editor matching Image 1 */}
-                <div className="w-full xl:w-[460px] 2xl:w-[500px] shrink-0 border-b xl:border-b-0 xl:border-r border-[#3A3024] p-4 lg:p-5 overflow-y-auto xl:max-h-[calc(100vh-160px)]">
+                <div className="w-full xl:w-[460px] 2xl:w-[500px] shrink-0 border-b xl:border-b-0 xl:border-r border-[#3A3024] p-4 lg:p-5 overflow-y-auto xl:max-h-[calc(100vh-70px)]">
                   <SprinEditorForm
                     doc={activeDoc}
                     onChange={setActiveDoc}
@@ -370,7 +373,7 @@ export function BuatSprinApp({
                 </div>
 
                 {/* Right Column: Live A4 2-Page Document Preview */}
-                <div className="flex-1 min-w-0 bg-[#0D0A07] flex flex-col xl:max-h-[calc(100vh-160px)]">
+                <div className="flex-1 min-w-0 bg-[#0D0A07] flex flex-col xl:max-h-[calc(100vh-70px)]">
                   {/* Preview Toolbar */}
                   <div className="px-4 lg:px-6 py-3 bg-[#17120D] border-b border-[#32291E] flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">

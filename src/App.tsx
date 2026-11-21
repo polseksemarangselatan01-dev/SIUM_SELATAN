@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Archive,
+  ArrowLeft,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -65,6 +66,13 @@ import {
 } from './utils/continuousRoster';
 
 const STORAGE_KEY = 'kuat_pers_berkelanjutan_v5';
+const SEED_20261121_KEY = 'kuat_pers_seed_20261121_v1';
+const SEED_20261121_IDS = ['pawas_7', 'lantas_4', 'lantas_5'] as const;
+const SEED_20261121_REMOVE_KEY = 'kuat_pers_remove_20261121_v1';
+const REMOVE_20261121_IDS = new Set(['pawas_3', 'pawas_5', 'lantas_2']);
+const REMOVE_20261121_NRPS = new Set(['73090344', '74020279', '83020743']);
+const SEED_20261121_ASSIGN_KEY = 'kuat_pers_assign_20261121_v1';
+const SEED_20261121_PAWAS_ORDER_KEY = 'kuat_pers_pawas_order_20261121_v1';
 
 interface SavedAppState {
   header: RosterOrgHeader;
@@ -76,25 +84,224 @@ interface SavedAppState {
   lastBackupAt?: string;
 }
 
-function loadSavedState(): SavedAppState & { scheduleRevisions: ScheduleRevision[] } {
+function loadSavedState(
+  tomorrowDateKey: string
+): SavedAppState & { scheduleRevisions: ScheduleRevision[] } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as SavedAppState;
       if (parsed && Array.isArray(parsed.personnel) && parsed.header) {
         const pawasAnchor = parsed.pawasAnchor ?? DEFAULT_PAWAS_ANCHOR;
-        const scheduleRevisions = normalizeScheduleRevisions(
+        let scheduleRevisions = normalizeScheduleRevisions(
           parsed.scheduleRevisions,
           parsed.personnel,
           pawasAnchor
         );
+
+        let seedApplied = false;
+        try {
+          seedApplied = localStorage.getItem(SEED_20261121_KEY) === 'done';
+        } catch {
+          seedApplied = false;
+        }
+
+        if (!seedApplied) {
+          const latestRev = scheduleRevisions[scheduleRevisions.length - 1];
+          const existingNrps = new Set(
+            latestRev.personnel.map((p) => p.nrp.trim()).filter(Boolean)
+          );
+          const existingIds = new Set(latestRev.personnel.map((p) => p.id));
+          const toInsert = INITIAL_PERSONNEL.filter(
+            (p) =>
+              (SEED_20261121_IDS as readonly string[]).includes(p.id) &&
+              !existingIds.has(p.id) &&
+              !existingNrps.has(p.nrp.trim())
+          );
+
+          if (toInsert.length > 0) {
+            const nextList = [...latestRev.personnel];
+            let insertAt = -1;
+            for (let i = nextList.length - 1; i >= 0; i--) {
+              if (nextList[i].unit === 'STANBY') {
+                insertAt = i + 1;
+                break;
+              }
+            }
+            if (insertAt === -1) {
+              nextList.push(...toInsert);
+            } else {
+              nextList.splice(insertAt, 0, ...toInsert);
+            }
+            scheduleRevisions = upsertFutureScheduleRevision(
+              scheduleRevisions,
+              tomorrowDateKey,
+              nextList,
+              latestRev.pawasAnchor
+            );
+          }
+
+          try {
+            localStorage.setItem(SEED_20261121_KEY, 'done');
+          } catch {
+            // Abaikan error storage
+          }
+        }
+
+        let removeApplied = false;
+        try {
+          removeApplied = localStorage.getItem(SEED_20261121_REMOVE_KEY) === 'done';
+        } catch {
+          removeApplied = false;
+        }
+
+        if (!removeApplied) {
+          const latestRev = scheduleRevisions[scheduleRevisions.length - 1];
+          const filtered = latestRev.personnel.filter(
+            (p) =>
+              !REMOVE_20261121_IDS.has(p.id) &&
+              !REMOVE_20261121_NRPS.has(p.nrp.trim())
+          );
+          if (filtered.length !== latestRev.personnel.length) {
+            scheduleRevisions = upsertFutureScheduleRevision(
+              scheduleRevisions,
+              tomorrowDateKey,
+              filtered,
+              latestRev.pawasAnchor
+            );
+          }
+          try {
+            localStorage.setItem(SEED_20261121_REMOVE_KEY, 'done');
+          } catch {
+            // Abaikan error storage
+          }
+        }
+
+        let assignApplied = false;
+        try {
+          assignApplied = localStorage.getItem(SEED_20261121_ASSIGN_KEY) === 'done';
+        } catch {
+          assignApplied = false;
+        }
+
+        if (!assignApplied) {
+          const latestRev = scheduleRevisions[scheduleRevisions.length - 1];
+          const targetSpecs = INITIAL_PERSONNEL.filter((p) =>
+            (SEED_20261121_IDS as readonly string[]).includes(p.id)
+          );
+          const targetByNrp = new Map(targetSpecs.map((p) => [p.nrp.trim(), p]));
+          const seenNrps = new Set<string>();
+          let changed = false;
+
+          const baseList: Personnel[] = [];
+          for (const existing of latestRev.personnel) {
+            const spec = targetByNrp.get(existing.nrp.trim());
+            if (spec) {
+              seenNrps.add(spec.nrp.trim());
+              if (
+                existing.unit !== spec.unit ||
+                existing.jabatan !== spec.jabatan ||
+                existing.cycleType !== spec.cycleType ||
+                existing.cycleLength !== spec.cycleLength
+              ) {
+                changed = true;
+                continue;
+              }
+            }
+            baseList.push(existing);
+          }
+
+          for (const spec of targetSpecs) {
+            const specNrp = spec.nrp.trim();
+            const needsInsert =
+              !seenNrps.has(specNrp) ||
+              !baseList.some((p) => p.nrp.trim() === specNrp);
+            if (!needsInsert) continue;
+            changed = true;
+            let insertAt = -1;
+            for (let i = baseList.length - 1; i >= 0; i--) {
+              if (baseList[i].unit === spec.unit) {
+                insertAt = i + 1;
+                break;
+              }
+            }
+            if (insertAt === -1) {
+              baseList.push(spec);
+            } else {
+              baseList.splice(insertAt, 0, spec);
+            }
+          }
+
+          if (changed) {
+            scheduleRevisions = upsertFutureScheduleRevision(
+              scheduleRevisions,
+              tomorrowDateKey,
+              baseList,
+              latestRev.pawasAnchor
+            );
+          }
+
+          try {
+            localStorage.setItem(SEED_20261121_ASSIGN_KEY, 'done');
+          } catch {
+            // Abaikan error storage
+          }
+        }
+
+        let pawasOrderApplied = false;
+        try {
+          pawasOrderApplied =
+            localStorage.getItem(SEED_20261121_PAWAS_ORDER_KEY) === 'done';
+        } catch {
+          pawasOrderApplied = false;
+        }
+
+        if (!pawasOrderApplied) {
+          const latestRev = scheduleRevisions[scheduleRevisions.length - 1];
+          const nextList = [...latestRev.personnel];
+          const aliIdx = nextList.findIndex(
+            (p) => p.nrp.trim() === '74080418' || p.id === 'pawas_7'
+          );
+          const subiantoIdx = nextList.findIndex(
+            (p) => p.nrp.trim() === '72100003' || p.id === 'pawas_4'
+          );
+
+          if (aliIdx !== -1 && subiantoIdx !== -1 && aliIdx > subiantoIdx) {
+            const [ali] = nextList.splice(aliIdx, 1);
+            const targetIdx = nextList.findIndex(
+              (p) => p.nrp.trim() === '72100003' || p.id === 'pawas_4'
+            );
+            nextList.splice(targetIdx >= 0 ? targetIdx : subiantoIdx, 0, ali);
+
+            let pawasCounter = 1;
+            const renumbered = nextList.map((p) =>
+              p.unit === 'PAWAS' ? { ...p, unitNo: pawasCounter++ } : p
+            );
+            scheduleRevisions = upsertFutureScheduleRevision(
+              scheduleRevisions,
+              tomorrowDateKey,
+              renumbered,
+              latestRev.pawasAnchor
+            );
+          }
+
+          try {
+            localStorage.setItem(SEED_20261121_PAWAS_ORDER_KEY, 'done');
+          } catch {
+            // Abaikan error storage
+          }
+        }
+
+        const latestAfterSeed =
+          scheduleRevisions[scheduleRevisions.length - 1];
         return {
           ...parsed,
+          personnel: latestAfterSeed.personnel,
           unitOrder:
             Array.isArray(parsed.unitOrder) && parsed.unitOrder.length > 0
               ? parsed.unitOrder
               : DEFAULT_UNIT_ORDER,
-          pawasAnchor,
+          pawasAnchor: latestAfterSeed.pawasAnchor,
           scheduleRevisions,
         };
       }
@@ -107,6 +314,14 @@ function loadSavedState(): SavedAppState & { scheduleRevisions: ScheduleRevision
     INITIAL_PERSONNEL,
     DEFAULT_PAWAS_ANCHOR
   );
+  try {
+    localStorage.setItem(SEED_20261121_KEY, 'done');
+    localStorage.setItem(SEED_20261121_REMOVE_KEY, 'done');
+    localStorage.setItem(SEED_20261121_ASSIGN_KEY, 'done');
+    localStorage.setItem(SEED_20261121_PAWAS_ORDER_KEY, 'done');
+  } catch {
+    // Abaikan error storage
+  }
   return {
     header: DEFAULT_ORG_HEADER,
     personnel: INITIAL_PERSONNEL,
@@ -155,11 +370,14 @@ const NAV_TABS: { id: AppTab; label: string; icon: typeof CalendarDays }[] = [
 ];
 
 export default function App() {
-  const initial = useMemo(() => loadSavedState(), []);
   const todayWib = useMemo(() => getSemarangToday(), []);
   const tomorrowDateKey = useMemo(
     () => getNextDayDateKey(todayWib.dateKey),
     [todayWib.dateKey]
+  );
+  const initial = useMemo(
+    () => loadSavedState(tomorrowDateKey),
+    [tomorrowDateKey]
   );
 
   const [header, setHeader] = useState<RosterOrgHeader>(initial.header);
@@ -752,6 +970,248 @@ export default function App() {
     </div>
   );
 
+  if (activeTab === 'buat-sprin') {
+    return (
+      <>
+        <BuatSprinApp
+          mainPersonnel={personnel}
+          unitOrder={unitOrder}
+          pawasAnchor={pawasAnchor}
+          overrides={overrides}
+          scheduleRevisions={scheduleRevisions}
+          todayDateKey={todayWib.dateKey}
+          onExitToDashboard={() => setActiveTab('dashboard')}
+        />
+        <OfflineIndicator />
+      </>
+    );
+  }
+
+  if (activeTab !== 'dashboard') {
+    const activeTabMeta = NAV_TABS.find((t) => t.id === activeTab);
+    const ActiveTabIcon = activeTabMeta?.icon;
+    const showMonthTools =
+      activeTab === 'matrix' ||
+      activeTab === 'daily' ||
+      activeTab === 'export';
+
+    return (
+      <div className="min-h-screen flex flex-col bg-white text-slate-900">
+        {/* Compact Full-Width Top Bar for Active Menu */}
+        <header className="bg-[#1a1611] text-[#f3ede4] border-b border-[#2e261d] px-3 sm:px-5 py-2 print:hidden sticky top-0 z-30">
+          <div className="w-full flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <button
+                type="button"
+                onClick={() => setActiveTab('dashboard')}
+                title="Kembali ke Dashboard Utama"
+                aria-label="Kembali ke Dashboard Utama"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#4A3D2C] bg-[#241C14] text-[#F4C94D] hover:bg-[#2F251A] hover:border-[#D4A017] text-xs font-semibold transition-colors shrink-0 cursor-pointer whitespace-nowrap"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Dashboard Utama</span>
+                <span className="sm:hidden">Dashboard</span>
+              </button>
+
+              <div className="flex items-center gap-2 min-w-0 pl-1 border-l border-[#32291d]">
+                {ActiveTabIcon && (
+                  <ActiveTabIcon className="w-4 h-4 text-[#dfb365] shrink-0" />
+                )}
+                <span className="text-xs sm:text-sm font-bold tracking-wide text-[#f5efe6] truncate">
+                  {activeTabMeta?.label}
+                </span>
+                <span className="hidden sm:inline-block text-[11px] font-mono tabular-nums text-[#cbb899] bg-[#241d15] border border-[#382e22] px-2 py-0.5 rounded">
+                  {personnel.length} Pers
+                </span>
+              </div>
+            </div>
+
+            {showMonthTools && (
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="inline-flex items-center border border-[#382e22] rounded-lg bg-[#13100c] overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => handleStepMonth(-1)}
+                    className="p-1.5 text-[#cbb899] hover:bg-[#241d15] hover:text-[#f5efe6] border-r border-[#382e22]"
+                    aria-label="Bulan sebelumnya"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <div className="px-2.5 py-1 text-xs font-semibold text-[#f3ede4] whitespace-nowrap min-w-[112px] text-center">
+                    {MONTH_NAMES_ID[monthIndex]} {year}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleStepMonth(1)}
+                    className="p-1.5 text-[#cbb899] hover:bg-[#241d15] hover:text-[#f5efe6] border-l border-[#382e22]"
+                    aria-label="Bulan berikutnya"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadCSV}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#a6783e] hover:bg-[#b88647] rounded-lg transition-colors whitespace-nowrap shrink-0"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Unduh Excel (.csv)</span>
+                  <span className="sm:hidden">CSV</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </header>
+
+        <main className="flex-1 w-full p-2.5 sm:p-5 print:p-0 space-y-4">
+          {notice && (
+            <div
+              role="status"
+              className="px-4 py-2.5 bg-amber-50 border border-amber-300 text-amber-950 text-xs font-medium rounded-lg flex items-center justify-between print:hidden"
+            >
+              <span>{notice}</span>
+              <button
+                type="button"
+                onClick={() => setNotice(null)}
+                className="text-amber-800 hover:text-amber-950 font-semibold ml-4"
+              >
+                Tutup
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'matrix' && (
+            <MonthlyMatrixView
+              year={year}
+              monthIndex={monthIndex}
+              todayDateKey={todayWib.dateKey}
+              personnel={personnel}
+              unitOrder={unitOrder}
+              pawasAnchor={pawasAnchor}
+              overrides={overrides}
+              scheduleRevisions={scheduleRevisions}
+              onSetOverride={handleSetOverride}
+              onClearMonthOverrides={handleClearMonthOverrides}
+              onInspectDay={(day) => {
+                setSelectedDay(day);
+                setActiveTab('daily');
+              }}
+              readOnly={!isAdmin}
+            />
+          )}
+
+          {activeTab === 'daily' && (
+            <DailyDutyView
+              header={header}
+              year={year}
+              monthIndex={monthIndex}
+              selectedDay={selectedDay}
+              todayDateKey={todayWib.dateKey}
+              onSelectDay={setSelectedDay}
+              personnel={personnel}
+              pawasAnchor={pawasAnchor}
+              overrides={overrides}
+              scheduleRevisions={scheduleRevisions}
+              onCopyText={handleCopyText}
+              copiedRecently={copiedRecently}
+            />
+          )}
+
+          {activeTab === 'rengiat' && (
+            <RengiatView
+              header={header}
+              todayDateKey={todayWib.dateKey}
+              personnel={personnel}
+              pawasAnchor={pawasAnchor}
+              overrides={overrides}
+              scheduleRevisions={scheduleRevisions}
+            />
+          )}
+
+          {activeTab === 'pam' && (
+            <DaftarPersPamView
+              header={header}
+              todayDateKey={todayWib.dateKey}
+              personnel={personnel}
+              unitOrder={unitOrder}
+              pawasAnchor={pawasAnchor}
+              overrides={overrides}
+              scheduleRevisions={scheduleRevisions}
+            />
+          )}
+
+          {activeTab === 'personnel' && isAdmin && (
+            <PersonnelManagerView
+              header={header}
+              todayDateKey={todayWib.dateKey}
+              personnel={personnel}
+              unitOrder={unitOrder}
+              pawasAnchor={pawasAnchor}
+              overrides={overrides}
+              scheduleRevisions={scheduleRevisions}
+              lastBackupAt={lastBackupAt}
+              onUpdatePawasAnchor={handleUpdatePawasAnchor}
+              onAddPersonnel={handleAddPersonnel}
+              onBulkAddPersonnel={handleBulkAddPersonnel}
+              onReplacePersonnel={handleReplacePersonnel}
+              onUpdatePersonnel={handleUpdatePersonnel}
+              onDeletePersonnel={handleDeletePersonnel}
+              onMovePersonnel={handleMovePersonnel}
+              onMoveUnit={handleMoveUnit}
+              onResetUnitOrder={handleResetUnitOrder}
+              onMarkBackupDone={(ts) => {
+                setLastBackupAt(ts);
+                showNotice('Cadangan data (backup) berhasil dibuat.');
+              }}
+              onRestoreBackup={handleRestoreBackup}
+              onResetBaseline={handleResetToBaseline}
+            />
+          )}
+
+          {activeTab === 'export' && (
+            <PrintExportView
+              header={header}
+              onUpdateHeader={(patch) => {
+                if (!isAdmin) return;
+                setHeader((prev) => ({ ...prev, ...patch }));
+              }}
+              year={year}
+              monthIndex={monthIndex}
+              personnel={personnel}
+              unitOrder={unitOrder}
+              pawasAnchor={pawasAnchor}
+              overrides={overrides}
+              scheduleRevisions={scheduleRevisions}
+              onDownloadCSV={handleDownloadCSV}
+              readOnlyHeader={!isAdmin}
+            />
+          )}
+
+          {activeTab === 'backup' && isAdmin && (
+            <BackupRestoreView
+              header={header}
+              personnel={personnel}
+              unitOrder={unitOrder}
+              pawasAnchor={pawasAnchor}
+              overrides={overrides}
+              scheduleRevisions={scheduleRevisions}
+              lastBackupAt={lastBackupAt}
+              onMarkBackupDone={(ts) => {
+                setLastBackupAt(ts);
+                showNotice('Cadangan data (backup) berhasil dibuat.');
+              }}
+              onRestoreBackup={handleRestoreBackup}
+              onResetBaseline={handleResetToBaseline}
+            />
+          )}
+        </main>
+
+        <OfflineIndicator />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-[#12100d] text-[#f3ede4] print:bg-white print:text-slate-900">
       {/* Top Institutional Header Bar */}
@@ -919,166 +1379,23 @@ export default function App() {
               </div>
             )}
 
-            {activeTab === 'dashboard' && (
-              <DashboardHomeView
-                session={session}
-                header={header}
-                personnel={personnel}
-                pawasAnchor={pawasAnchor}
-                overrides={overrides}
-                scheduleRevisions={scheduleRevisions}
-                todayWib={todayWib}
-                lastBackupAt={lastBackupAt}
-                onNavigateTab={(tab) => setActiveTab(tab)}
-                onInspectTodayDaily={() => {
-                  setYear(todayWib.year);
-                  setMonthIndex(todayWib.monthIndex);
-                  setSelectedDay(todayWib.day);
-                  setActiveTab('daily');
-                }}
-              />
-            )}
-
-            {activeTab === 'buat-sprin' && (
-              <BuatSprinApp
-                mainPersonnel={personnel}
-                unitOrder={unitOrder}
-                pawasAnchor={pawasAnchor}
-                overrides={overrides}
-                scheduleRevisions={scheduleRevisions}
-                todayDateKey={todayWib.dateKey}
-              />
-            )}
-
-            {/* Existing Jadwal Piket views preserved completely unchanged inside a crisp paper surface */}
-            {activeTab !== 'dashboard' && activeTab !== 'buat-sprin' && (
-              <div className="bg-white text-slate-900 rounded-xl border border-[#2f271d] p-2.5 sm:p-5 print:border-0 print:p-0 print:rounded-none">
-                {activeTab === 'matrix' && (
-                  <MonthlyMatrixView
-                    year={year}
-                    monthIndex={monthIndex}
-                    todayDateKey={todayWib.dateKey}
-                    personnel={personnel}
-                    unitOrder={unitOrder}
-                    pawasAnchor={pawasAnchor}
-                    overrides={overrides}
-                    scheduleRevisions={scheduleRevisions}
-                    onSetOverride={handleSetOverride}
-                    onClearMonthOverrides={handleClearMonthOverrides}
-                    onInspectDay={(day) => {
-                      setSelectedDay(day);
-                      setActiveTab('daily');
-                    }}
-                    readOnly={!isAdmin}
-                  />
-                )}
-
-                {activeTab === 'daily' && (
-                  <DailyDutyView
-                    header={header}
-                    year={year}
-                    monthIndex={monthIndex}
-                    selectedDay={selectedDay}
-                    todayDateKey={todayWib.dateKey}
-                    onSelectDay={setSelectedDay}
-                    personnel={personnel}
-                    pawasAnchor={pawasAnchor}
-                    overrides={overrides}
-                    scheduleRevisions={scheduleRevisions}
-                    onCopyText={handleCopyText}
-                    copiedRecently={copiedRecently}
-                  />
-                )}
-
-                {activeTab === 'rengiat' && (
-                  <RengiatView
-                    header={header}
-                    todayDateKey={todayWib.dateKey}
-                    personnel={personnel}
-                    pawasAnchor={pawasAnchor}
-                    overrides={overrides}
-                    scheduleRevisions={scheduleRevisions}
-                  />
-                )}
-
-                {activeTab === 'pam' && (
-                  <DaftarPersPamView
-                    header={header}
-                    todayDateKey={todayWib.dateKey}
-                    personnel={personnel}
-                    unitOrder={unitOrder}
-                    pawasAnchor={pawasAnchor}
-                    overrides={overrides}
-                    scheduleRevisions={scheduleRevisions}
-                  />
-                )}
-
-                {activeTab === 'personnel' && isAdmin && (
-                  <PersonnelManagerView
-                    header={header}
-                    todayDateKey={todayWib.dateKey}
-                    personnel={personnel}
-                    unitOrder={unitOrder}
-                    pawasAnchor={pawasAnchor}
-                    overrides={overrides}
-                    scheduleRevisions={scheduleRevisions}
-                    lastBackupAt={lastBackupAt}
-                    onUpdatePawasAnchor={handleUpdatePawasAnchor}
-                    onAddPersonnel={handleAddPersonnel}
-                    onBulkAddPersonnel={handleBulkAddPersonnel}
-                    onReplacePersonnel={handleReplacePersonnel}
-                    onUpdatePersonnel={handleUpdatePersonnel}
-                    onDeletePersonnel={handleDeletePersonnel}
-                    onMovePersonnel={handleMovePersonnel}
-                    onMoveUnit={handleMoveUnit}
-                    onResetUnitOrder={handleResetUnitOrder}
-                    onMarkBackupDone={(ts) => {
-                      setLastBackupAt(ts);
-                      showNotice('Cadangan data (backup) berhasil dibuat.');
-                    }}
-                    onRestoreBackup={handleRestoreBackup}
-                    onResetBaseline={handleResetToBaseline}
-                  />
-                )}
-
-                {activeTab === 'export' && (
-                  <PrintExportView
-                    header={header}
-                    onUpdateHeader={(patch) => {
-                      if (!isAdmin) return;
-                      setHeader((prev) => ({ ...prev, ...patch }));
-                    }}
-                    year={year}
-                    monthIndex={monthIndex}
-                    personnel={personnel}
-                    unitOrder={unitOrder}
-                    pawasAnchor={pawasAnchor}
-                    overrides={overrides}
-                    scheduleRevisions={scheduleRevisions}
-                    onDownloadCSV={handleDownloadCSV}
-                    readOnlyHeader={!isAdmin}
-                  />
-                )}
-
-                {activeTab === 'backup' && isAdmin && (
-                  <BackupRestoreView
-                    header={header}
-                    personnel={personnel}
-                    unitOrder={unitOrder}
-                    pawasAnchor={pawasAnchor}
-                    overrides={overrides}
-                    scheduleRevisions={scheduleRevisions}
-                    lastBackupAt={lastBackupAt}
-                    onMarkBackupDone={(ts) => {
-                      setLastBackupAt(ts);
-                      showNotice('Cadangan data (backup) berhasil dibuat.');
-                    }}
-                    onRestoreBackup={handleRestoreBackup}
-                    onResetBaseline={handleResetToBaseline}
-                  />
-                )}
-              </div>
-            )}
+            <DashboardHomeView
+              session={session}
+              header={header}
+              personnel={personnel}
+              pawasAnchor={pawasAnchor}
+              overrides={overrides}
+              scheduleRevisions={scheduleRevisions}
+              todayWib={todayWib}
+              lastBackupAt={lastBackupAt}
+              onNavigateTab={(tab) => setActiveTab(tab)}
+              onInspectTodayDaily={() => {
+                setYear(todayWib.year);
+                setMonthIndex(todayWib.monthIndex);
+                setSelectedDay(todayWib.day);
+                setActiveTab('daily');
+              }}
+            />
           </div>
         </main>
       </div>
